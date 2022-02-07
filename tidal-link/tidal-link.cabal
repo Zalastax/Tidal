@@ -29,12 +29,6 @@ library
   Build-depends:
       base >=4.8 && <5
 
-  extra-libraries:
-      stdc++
-      iphlpapi
-      winmm
-      ws2_32
-
   Build-depends:
       base >=4.8 && <5
 
@@ -44,8 +38,19 @@ library
     link/modules/asio-standalone/asio/include
     link/extensions/abl_link/include
 
-  cxx-options:
-    -DLINK_PLATFORM_WINDOWS=1 -Wno-multichar -Wno-subobject-linkage -g
+  if os(windows)
+    extra-libraries:
+        stdc++
+        iphlpapi
+        winmm
+        ws2_32
+    cxx-options:
+      -DLINK_PLATFORM_WINDOWS=1 -Wno-multichar -Wno-subobject-linkage -g
+  else
+    extra-libraries:
+        stdc++
+    cxx-options:
+      -DLINK_PLATFORM_LINUX=1 -Wno-multichar -Wno-subobject-linkage -g
 
 executable linktest
   ghc-options: -Wall
