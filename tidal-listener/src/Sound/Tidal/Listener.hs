@@ -77,8 +77,9 @@ startHint = do mIn <- newEmptyMVar
                forkIO $ hintJob mIn mOut
                return (mIn, mOut)
 
-getcps st = do tempo <- readMVar $ T.sTempoMV (sStream st)
-               return (Tempo.cps tempo)
+-- TODO: reimplement getcps
+-- getcps st = do tempo <- readMVar $ T.sTempoMV (sStream st)
+--               return (Tempo.cps tempo)
 
 act :: State -> Maybe O.Message -> IO State
 act st (Just (Message "/code" [ASCII_String a_ident, ASCII_String a_code])) =
@@ -99,8 +100,10 @@ act st (Just (Message "/ping" [])) =
      return st
 
 act st (Just (Message "/cps" [])) =
-  do cps <- getcps st
-     O.sendTo (sLocal st) (O.p_message "/cps" [float cps]) (sRemote st)
+  do -- cps <- getcps st
+     -- O.sendTo (sLocal st) (O.p_message "/cps" [float cps]) (sRemote st)
+     -- TODO: reimplement fetching current cps
+     O.sendTo (sLocal st) (O.p_message "/cps" [float 0]) (sRemote st)
      return st
 
 act st Nothing = do putStrLn "not a message?"

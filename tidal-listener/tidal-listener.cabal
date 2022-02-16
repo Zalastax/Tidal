@@ -11,7 +11,7 @@ author:              Lizzie Wilson and Alex McLean
 maintainer:          alex@slab.org
 -- copyright:
 category:            Sound
-build-type:          Simple
+build-type:          Custom
 extra-source-files:  CHANGELOG.md, README.md
 
 library
@@ -34,3 +34,10 @@ executable tidal-listener
                        tidal-listener
   hs-source-dirs:       app
   default-language:    Haskell2010
+
+custom-setup
+  setup-depends:
+    base >=4.8 && <5,
+    Cabal >= 3.2 && < 4,
+    directory >=1.3 && <2,
+    filepath >=1.4 && <2
