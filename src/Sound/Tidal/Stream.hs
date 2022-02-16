@@ -353,6 +353,7 @@ toOSC busses pe osc@(OSC _ _)
         -- In case (value e) has the key "", we will get a crash here.
         playmap' = Map.union (Map.mapKeys tail $ Map.map (\(VI i) -> VS ('c':(show $ toBus i))) busmap) playmap
         val = value . peEvent
+        -- Only events that start within the current nowArc are included
         playmsg | peHasOnset pe = do
                   -- If there is already cps in the event, the union will preserve that.
                   let extra = Map.fromList [("cps", (VF (coerce $! peCps pe))),
@@ -381,7 +382,6 @@ toOSC busses pe osc@(OSC _ _)
           where
             tsPart = (peOnPartOsc pe) + nudge -- + latency
         nudge = fromJust $ getF $ fromMaybe (VF 0) $ Map.lookup "nudge" $ playmap
--- TODO: Continue here
 toOSC _ pe (OSCContext oscpath)
   = map cToM $ contextPosition $ context $ peEvent pe
   where cToM :: ((Int,Int),(Int,Int)) -> (Double, Bool, O.Message)
@@ -534,21 +534,12 @@ doTick fake stream st ops sMap =
       forM_ cxs $ \cx@(Cx target _ oscs _ _) -> do
         -- Latency is configurable per target
         -- We also add extra latency:
-        -- 0 for fake ticks
-        -- timeframe length + nudge for other ticks
+        --   0 for fake ticks
+        --   nudge for other ticks
+        -- TODO: Separate the nudge and latency since nudge should
+        -- affect all send modes while latency only for sending events live
         let latency = oLatency target + extraLatency
-            ms = concatMap (\e ->
-                              -- All events in the playmap are added in case of a fake tick
-                              -- Q: Why do we need special handling for fake ticks? It seems to me like:
-                              --    * Arc is a full cycle when we have a fake tick
-                              --    * frameEnd is end of the cycle when we have a fake tick
-                              --    Thus all events returned by query should have onset < frameEnd?
-                              -- A: ?
-                              -- Only events that have onset before frame end gets added in normal ticks
-                              if (fake || (peOnWholeOrPart e) < frameEnd)
-                              then concatMap (toOSC busses e) oscs
-                              else []
-                          ) tes
+            ms = concatMap (\e ->  concatMap (toOSC busses e) oscs) tes
         -- send the events to the OSC target
         forM_ ms $ \ m -> (do
           send (sListen stream) cx latency m) `E.catch` \ (e :: E.SomeException) -> do
