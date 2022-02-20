@@ -119,7 +119,7 @@ clocked config stateMV mapMV actionsMV ac
           do
             let bpm = (coerce defaultCps) * 60 * cyclesPerBeat
             abletonLink <- Link.create bpm
-            Link.enable abletonLink
+            when (cEnableLink config) $ Link.enable abletonLink
             sessionState <- Link.createAndCaptureAppSessionState abletonLink
             now <- Link.clock abletonLink
             let startAt = now + processAhead
