@@ -352,6 +352,8 @@ toOSC busses pe osc@(OSC _ _)
         -- Map.mapKeys tail is used to remove ^ from the keys.
         -- In case (value e) has the key "", we will get a crash here.
         playmap' = Map.union (Map.mapKeys tail $ Map.map (\(VI i) -> VS ('c':(show $ toBus i))) busmap) playmap
+        toChannelId (VI i) = VS ('c':(show $ toBus i))
+        toChannelId _      = error "All channels IDs should be VI"
         val = value . peEvent
         -- Only events that start within the current nowArc are included
         playmsg | peHasOnset pe = do
@@ -451,7 +453,7 @@ streamFirst :: Stream -> ControlPattern -> IO ()
 streamFirst stream pat = modifyMVar_ (sActionsMV stream) (\actions -> return $ (T.SingleTick pat) : actions)
 
 -- Used for Tempo callback
-onTick :: Stream -> T.State -> T.LinkOperations -> ValueMap -> IO ValueMap
+onTick :: Stream -> TickState -> T.LinkOperations -> ValueMap -> IO ValueMap
 onTick stream st ops s
   = doTick False stream st ops s
 
@@ -471,13 +473,11 @@ onSingleTick stream now ops s pat = do
           )
   bpm <- (T.getTempo ops)
   let cps = realToFrac $ (T.beatToCycles ops) bpm
-  nowEnd <- (T.timeAtBeat ops) cps
 
-  let state = T.State {T.ticks = 0,
-                        T.start = now,
-                        T.nowEnd = nowEnd,
+  let state = TickState {tickStart = now,
                         -- The nowArc is a full cycle
-                        T.nowArc = (Arc 0 1)
+                        tickArc = (Arc 0 1),
+                        tickNudge = 0
                       }
   doTick True (stream {sPMapMV = pMapMV}) state ops s
 
@@ -495,7 +495,7 @@ onSingleTick stream now ops s pat = do
 -- this function prints a warning and resets the current pattern
 -- to the previous one (or to silence if there isn't one) and continues,
 -- because the likely reason is that something is wrong with the current pattern.
-doTick :: Bool -> Stream -> T.State -> T.LinkOperations -> ValueMap -> IO ValueMap
+doTick :: Bool -> Stream -> TickState -> T.LinkOperations -> ValueMap -> IO ValueMap
 doTick fake stream st ops sMap =
   E.handle (\ (e :: E.SomeException) -> do
     hPutStrLn stderr $ "Failed to Stream.doTick: " ++ show e
@@ -506,7 +506,7 @@ doTick fake stream st ops sMap =
       busses <- readMVar (sBusses stream)
       sGlobalF <- readMVar (sGlobalFMV stream)
       bpm <- (T.getTempo ops)
-      cycleNow <- (T.timeToCycles ops) $ T.start st
+      cycleNow <- (T.timeToCycles ops) $ tickStart st
       let
         config = sConfig stream
         cxs = sCxs stream
@@ -514,16 +514,12 @@ doTick fake stream st ops sMap =
         -- If a 'fake' tick, it'll be aligned with cycle zero
         pat | fake = withResultTime (+ cycleNow) patstack
             | otherwise = patstack
-        frameEnd :: Link.Micros
-        frameEnd = T.nowEnd st
         -- add cps to 
         cps = (T.beatToCycles ops) bpm
         sMap' = Map.insert "_cps" (VF $ coerce cps) sMap
-        --filterOns = filter eventHasOnset
-        extraLatency | fake = 0
-                     | otherwise = T.nudged st
+        extraLatency = tickNudge st
         -- First the state is used to query the pattern
-        es = sortOn (start . part) $ query pat (State {arc = T.nowArc st,
+        es = sortOn (start . part) $ query pat (State {arc = tickArc st,
                                                         controls = sMap'
                                                       }
                                                 )
@@ -532,17 +528,13 @@ doTick fake stream st ops sMap =
       tes <- processCps ops es'
       -- For each OSC target
       forM_ cxs $ \cx@(Cx target _ oscs _ _) -> do
-        -- Latency is configurable per target
-        -- We also add extra latency:
-        --   0 for fake ticks
-        --   nudge for other ticks
-        -- TODO: Separate the nudge and latency since nudge should
-        -- affect all send modes while latency only for sending events live
-        let latency = oLatency target + extraLatency
+        -- Latency is configurable per target.
+        -- Latency is only used when sending events live.
+        let latency = oLatency target
             ms = concatMap (\e ->  concatMap (toOSC busses e) oscs) tes
         -- send the events to the OSC target
         forM_ ms $ \ m -> (do
-          send (sListen stream) cx latency m) `E.catch` \ (e :: E.SomeException) -> do
+          send (sListen stream) cx latency extraLatency m) `E.catch` \ (e :: E.SomeException) -> do
           hPutStrLn stderr $ "Failed to send. Is the '" ++ oName target ++ "' target running? " ++ show e
       sMap'' `seq` return sMap'')
 
@@ -558,16 +550,16 @@ setPreviousPatternOrSilence stream =
 -- Send events early using timestamp in the OSC bundle - used by Superdirt
 -- Send events early by adding timestamp to the OSC message - used by Dirt
 -- Send events live by delaying the thread
-send :: Maybe O.UDP -> Cx -> Double -> (Double, Bool, O.Message) -> IO ()
-send listen cx latency (time, isBusMsg, m)
-  | oSchedule target == Pre BundleStamp = sendBndl isBusMsg listen cx $ O.Bundle time [m]
+send :: Maybe O.UDP -> Cx -> Double -> Double -> (Double, Bool, O.Message) -> IO ()
+send listen cx latency extraLatency (time, isBusMsg, m)
+  | oSchedule target == Pre BundleStamp = sendBndl isBusMsg listen cx $ O.Bundle (time + extraLatency) [m]
   | oSchedule target == Pre MessageStamp = sendO isBusMsg listen cx $ addtime m
   | otherwise = do _ <- forkOS $ do now <- O.time
-                                    threadDelay $ floor $ (time - now - latency) * 1000000
+                                    threadDelay $ floor $ (time - now - latency  + extraLatency) * 1000000
                                     sendO isBusMsg listen cx m
                    return ()
     where addtime (O.Message mpath params) = O.Message mpath ((O.int32 sec):((O.int32 usec):params))
-          ut = O.ntpr_to_ut time
+          ut = O.ntpr_to_ut (time  + extraLatency)
           sec :: Int
           sec = floor ut
           usec :: Int
@@ -742,11 +734,8 @@ ctrlResponder waits c (stream@(Stream {sListen = Just sock}))
         withID _ _ = return ()
 ctrlResponder _ _ _ = return ()
 
-
 verbose :: Config -> String -> IO ()
 verbose c s = when (cVerbose c) $ putStrLn s
 
 recvMessagesTimeout :: (O.Transport t) => Double -> t -> IO [O.Message]
 recvMessagesTimeout n sock = fmap (maybe [] O.packetMessages) $ O.recvPacketTimeout n sock
-
--- TODO: Add back streamGetcps and streamGetnow

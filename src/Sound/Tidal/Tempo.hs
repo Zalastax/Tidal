@@ -5,15 +5,11 @@
 module Sound.Tidal.Tempo where
 
 import Control.Concurrent.MVar
--- import Control.Concurrent.Chan
 import qualified Sound.Tidal.Pattern as P
 import qualified Sound.OSC.FD as O
--- import qualified Network.Socket as N
 import Control.Concurrent (forkIO, ThreadId, threadDelay)
 import Control.Monad (when)
 import qualified Data.Map.Strict as Map
--- import Control.Monad (forever, when, foldM)
--- import Data.List (nub)
 import qualified Control.Exception as E
 import Sound.Tidal.ID
 import Sound.Tidal.Config
@@ -68,7 +64,7 @@ data State = State {ticks    :: Int64,
 
 data ActionHandler =
   ActionHandler {
-    onTick :: State -> LinkOperations -> P.ValueMap -> IO P.ValueMap,
+    onTick :: TickState -> LinkOperations -> P.ValueMap -> IO P.ValueMap,
     onSingleTick :: Link.Micros -> LinkOperations -> P.ValueMap -> P.ControlPattern -> IO P.ValueMap,
     updatePattern :: ID -> P.ControlPattern -> IO ()
   }
@@ -110,15 +106,10 @@ addMicrosToOsc m t = ((fromIntegral m) / 1000000) + t
 clocked :: Config -> MVar P.ValueMap -> MVar PlayMap -> MVar [TempoAction] -> ActionHandler -> IO [ThreadId]
 clocked config stateMV mapMV actionsMV ac
   = do -- TODO - do something with thread id
-       -- _ <- serverListen config
-       -- clientListen assumes tempoMV is empty
-       -- listenTid <- clientListen config tempoMV s
       clockTid <- forkIO $ loopInit
-       -- return [listenTid, clockTid]
       return $! [clockTid]
   where frameTimespan :: Link.Micros
         frameTimespan = round $ (cFrameTimespan config) * 1000000
-        -- create startloop function and create the link wrapper there
         quantum :: CDouble
         quantum = cQuantum config
         cyclesPerBeat :: CDouble
@@ -172,21 +163,7 @@ clocked config stateMV mapMV actionsMV ac
         -- Processing of the nowArc should happen early enough for
         -- all events in the nowArc to hit the speaker, but not too early.
         -- Processing thus needs to happen a short while before the start
-        -- of nowArc. For now, this short while = frameTimespan.
-        -- The nowArc that will be used starts at the current end and ends
-        -- at the cycle where we predict it will end at.
-        -- checkArc should therefore look at the end of the currently stored
-        -- nowArc rather than at the start of it.
-        -- If processing is late, we anyway keep processing at the same rate.
-        -- Ticks are only skipped if processing gets very out of sync.
-        -- When ticks are skipped, the events are still processed,
-        -- but multiple frames are merged.
-        -- It is possible for the nowArc to be several ticks in the future.
-        -- This likely only happens when we are starting up or have reset
-        -- the cycles, but perhaps it can also happen if bpm is changed
-        -- drastically?
-        -- When it happens, we just wait for time to pass until the nowArc
-        -- is close enough in time.
+        -- of nowArc. How far ahead is controlled by cProcessAhead.
         processAhead :: Link.Micros
         processAhead = round $ (cProcessAhead config) * 1000000
         checkArc :: State -> IO a
@@ -223,7 +200,12 @@ clocked config stateMV mapMV actionsMV ac
               beatToCycles = btc,
               cyclesToBeat = ctb
             }
-            streamState' <- (onTick ac) st' ops streamState
+            let state = TickState {
+                tickStart = start st',
+                tickArc   = nowArc st',
+                tickNudge = nudged st'
+            }
+            streamState' <- (onTick ac) state ops streamState
             Link.commitAndDestroyAppSessionState (al st) sessionState
             putMVar stateMV streamState'
             tick st'
@@ -326,86 +308,3 @@ clocked config stateMV mapMV actionsMV ac
             let pMap' = Map.insert (fromID patId) (playState {pattern = pat'}) pMap
             _ <- swapMVar mapMV pMap'
             return (st', streamState')
-
-{-
--- clientListen assumes tempoMV is empty
-clientListen :: Config -> MVar Tempo -> O.Time -> IO ThreadId
-clientListen config tempoMV s =
-  do -- Listen on random port
-     let tempoClientPort = cTempoClientPort config
-         hostname = cTempoAddr config
-         port = cTempoPort config
-     (remote_addr:_) <- N.getAddrInfo Nothing (Just hostname) Nothing
-     local <- O.udpServer "0.0.0.0" tempoClientPort
-     let (N.SockAddrInet _ a) = N.addrAddress remote_addr
-         remote = N.SockAddrInet (fromIntegral port) a
-         t = defaultTempo s local remote
-     print "Write clientListen"
-     putMVar tempoMV t
-     -- Send to clock port from same port that's listened to
-     O.sendTo local (O.p_message "/hello" []) remote
-     -- Make tempo mvar
-     -- Listen to tempo changes
-     tid <- forkIO $ listenTempo local tempoMV
-
-sendTempo :: Tempo -> IO ()
-sendTempo tempo = O.sendTo (localUDP tempo) (O.p_bundle (atTime tempo) [m]) (remoteAddr tempo)
-  where m = O.Message "/transmit/cps/cycle" [O.Float $ fromRational $ atCycle tempo,
-                                             O.Float $ realToFrac $ cps tempo,
-                                             O.Int32 $ if paused tempo then 1 else 0
-                                            ]
-
-listenTempo :: O.UDP -> MVar Tempo -> IO ()
-listenTempo udp tempoMV = forever $ do pkt <- O.recvPacket udp
-                                       act Nothing pkt
-                                       return ()
-  where act _ (O.Packet_Bundle (O.Bundle ts ms)) = mapM_ (act (Just ts) . O.Packet_Message) ms
-        act (Just ts) (O.Packet_Message (O.Message "/cps/cycle" [O.Float atCycle',
-                                                                 O.Float cps',
-                                                                 O.Int32 paused'
-                                                                ]
-                                        )
-                      ) =
-          do tempo <- takeMVar tempoMV
-             putMVar tempoMV $ tempo {atTime = ts,
-                                      atCycle = realToFrac atCycle',
-                                      cps = realToFrac cps',
-                                      paused = paused' == 1,
-                                      synched = True
-                                     }
-        act _ pkt = writeError $ "Unknown packet (client): " ++ show pkt
-
-serverListen :: Config -> IO (Maybe ThreadId)
-serverListen config = catchAny run (\_ -> return Nothing) -- probably just already running)
-  where run = do let port = cTempoPort config
-                 -- iNADDR_ANY deprecated - what's the right way to do this?
-                 udp <- O.udpServer "0.0.0.0" port
-                 cpsMessage <- defaultCpsMessage
-                 tid <- forkIO $ loop udp ([], cpsMessage)
-                 return $ Just tid
-        loop udp (cs, msg) = do (pkt,c) <- O.recvFrom udp
-                                (cs', msg') <- act udp c Nothing (cs,msg) pkt
-                                loop udp (cs', msg')
-        act :: O.UDP -> N.SockAddr -> Maybe O.Time -> ([N.SockAddr], O.Packet) -> O.Packet -> IO ([N.SockAddr], O.Packet)
-        act udp c _ (cs,msg) (O.Packet_Bundle (O.Bundle ts ms)) = foldM (act udp c (Just ts)) (cs,msg) $ map O.Packet_Message ms
-        act udp c _ (cs,msg) (O.Packet_Message (O.Message "/hello" []))
-          = do O.sendTo udp msg c
-               return (nub (c:cs),msg)
-        act udp _ (Just ts) (cs,_) (O.Packet_Message (O.Message "/transmit/cps/cycle" params)) =
-          do let path' = "/cps/cycle"
-                 msg' = O.p_bundle ts [O.Message path' params]
-             mapM_ (O.sendTo udp msg') cs
-             return (cs, msg')
-        act _ x _ (cs,msg) pkt = do writeError $ "Unknown packet (serv): " ++ show pkt ++ " / " ++ show x
-                                    return (cs,msg)
-        catchAny :: IO a -> (E.SomeException -> IO a) -> IO a
-        catchAny = E.catch
-        defaultCpsMessage = do ts <- O.time
-                               return $ O.p_bundle ts [O.Message "/cps/cycle" [O.Float 0,
-                                                                               O.Float $ realToFrac defaultCps,
-                                                                               O.Int32 0
-                                                                              ]
-                                                    ]
-
-
--}
