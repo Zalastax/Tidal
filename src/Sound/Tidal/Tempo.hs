@@ -196,12 +196,11 @@ clocked config stateMV mapMV actionsMV ac
               timeToCycles = timeToCycles' config sessionState,
               getTempo = Link.getTempo sessionState,
               setTempo = Link.setTempo sessionState,
-              linkToOscTime = \lt -> addMicrosToOsc (nowLink - lt) nowOsc,
+              linkToOscTime = \lt -> addMicrosToOsc (lt - nowLink) nowOsc,
               beatToCycles = btc,
               cyclesToBeat = ctb
             }
             let state = TickState {
-                tickStart = start st',
                 tickArc   = nowArc st',
                 tickNudge = nudged st'
             }
@@ -248,7 +247,7 @@ clocked config stateMV mapMV actionsMV ac
             zeroedSessionState <- Link.createAndCaptureAppSessionState (al st)
             nowOsc <- O.time
             nowLink <- Link.clock (al st)
-            Link.forceBeatAtTime zeroedSessionState 0 nowLink quantum
+            Link.forceBeatAtTime zeroedSessionState 0 (nowLink + processAhead) quantum
             let ops = LinkOperations {
               timeAtBeat = \beat -> Link.timeAtBeat zeroedSessionState beat quantum,
               timeToCycles = timeToCycles' config zeroedSessionState,
@@ -256,7 +255,7 @@ clocked config stateMV mapMV actionsMV ac
               setTempo = \bpm micros ->
                             Link.setTempo zeroedSessionState bpm micros >>
                             Link.setTempo sessionState bpm micros,
-              linkToOscTime = \lt -> addMicrosToOsc (nowLink - lt) nowOsc,
+              linkToOscTime = \lt -> addMicrosToOsc (lt - nowLink) nowOsc,
               beatToCycles = btc,
               cyclesToBeat = ctb
             }

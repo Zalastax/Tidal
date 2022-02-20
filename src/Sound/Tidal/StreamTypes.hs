@@ -16,7 +16,6 @@ type PatId = String
 type PlayMap = Map.Map PatId PlayState
 
 data TickState = TickState {
-                    tickStart :: Link.Micros,
                     tickArc   :: Arc,
                     tickNudge :: Double
                    }

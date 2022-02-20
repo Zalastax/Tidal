@@ -455,7 +455,7 @@ streamFirst stream pat = modifyMVar_ (sActionsMV stream) (\actions -> return $ (
 -- Used for Tempo callback
 onTick :: Stream -> TickState -> T.LinkOperations -> ValueMap -> IO ValueMap
 onTick stream st ops s
-  = doTick False stream st ops s
+  = doTick stream st ops s
 
 -- Used for Tempo callback
 -- Tempo changes will be applied.
@@ -474,12 +474,9 @@ onSingleTick stream now ops s pat = do
   bpm <- (T.getTempo ops)
   let cps = realToFrac $ (T.beatToCycles ops) bpm
 
-  let state = TickState {tickStart = now,
-                        -- The nowArc is a full cycle
-                        tickArc = (Arc 0 1),
-                        tickNudge = 0
-                      }
-  doTick True (stream {sPMapMV = pMapMV}) state ops s
+  -- The nowArc is a full cycle
+  let state = TickState {tickArc = (Arc 0 1), tickNudge = 0}
+  doTick (stream {sPMapMV = pMapMV}) state ops s
 
 
 -- | Query the current pattern (contained in argument @stream :: Stream@)
@@ -495,8 +492,8 @@ onSingleTick stream now ops s pat = do
 -- this function prints a warning and resets the current pattern
 -- to the previous one (or to silence if there isn't one) and continues,
 -- because the likely reason is that something is wrong with the current pattern.
-doTick :: Bool -> Stream -> TickState -> T.LinkOperations -> ValueMap -> IO ValueMap
-doTick fake stream st ops sMap =
+doTick :: Stream -> TickState -> T.LinkOperations -> ValueMap -> IO ValueMap
+doTick stream st ops sMap =
   E.handle (\ (e :: E.SomeException) -> do
     hPutStrLn stderr $ "Failed to Stream.doTick: " ++ show e
     hPutStrLn stderr $ "Return to previous pattern."
@@ -506,20 +503,15 @@ doTick fake stream st ops sMap =
       busses <- readMVar (sBusses stream)
       sGlobalF <- readMVar (sGlobalFMV stream)
       bpm <- (T.getTempo ops)
-      cycleNow <- (T.timeToCycles ops) $ tickStart st
       let
         config = sConfig stream
         cxs = sCxs stream
         patstack = sGlobalF $ playStack pMap
-        -- If a 'fake' tick, it'll be aligned with cycle zero
-        pat | fake = withResultTime (+ cycleNow) patstack
-            | otherwise = patstack
-        -- add cps to 
         cps = (T.beatToCycles ops) bpm
         sMap' = Map.insert "_cps" (VF $ coerce cps) sMap
         extraLatency = tickNudge st
         -- First the state is used to query the pattern
-        es = sortOn (start . part) $ query pat (State {arc = tickArc st,
+        es = sortOn (start . part) $ query patstack (State {arc = tickArc st,
                                                         controls = sMap'
                                                       }
                                                 )
