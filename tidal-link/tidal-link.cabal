@@ -11,7 +11,7 @@ maintainer:          Pierre Krafft <kpierre@outlook.com>, Alex McLean <alex@slab
 Stability:           Experimental
 Copyright:           (c) Pierre Krafft and contributors, 2021
 category:            Sound
-build-type:          Custom
+build-type:          Simple
 tested-with:         GHC == 9.2.1
 
 extra-source-files: README.md
@@ -35,6 +35,9 @@ library
         iphlpapi
         winmm
         ws2_32
+    cxx-options:
+      -DLINK_PLATFORM_WINDOWS=1 -Wno-multichar -Wno-subobject-linkage -g -liphlpapi -lwinmm -lws2_32
+    cxx-sources: link/extensions/abl_link/src/abl_link.cpp
   elif os(darwin)
     extra-libraries:
         stdc++
