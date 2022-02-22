@@ -35,6 +35,12 @@ library
         iphlpapi
         winmm
         ws2_32
+  elif os(darwin)
+    extra-libraries:
+        stdc++
+    cxx-options:
+      -DLINK_PLATFORM_MACOSX=1 -Wno-multichar -Wno-subobject-linkage -g
+    cxx-sources: link/extensions/abl_link/src/abl_link.cpp
   else
     extra-libraries:
         stdc++
