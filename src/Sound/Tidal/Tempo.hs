@@ -57,8 +57,7 @@ data State = State {ticks    :: Int64,
                     start    :: Link.Micros,
                     nowEnd   :: Link.Micros,
                     nowArc   :: P.Arc,
-                    nudged   :: Double,
-                    al       :: Link.AbletonLink
+                    nudged   :: Double
                    }
   deriving Show
 
@@ -86,9 +85,6 @@ resetCycles actionsMV = modifyMVar_ actionsMV (\actions -> return $ ResetCycles 
 setNudge :: MVar [TempoAction] -> Double -> IO ()
 setNudge actionsMV nudge = modifyMVar_ actionsMV (\actions -> return $ SetNudge nudge : actions)
 
-defaultCps :: O.Time
-defaultCps = 0.5625
-
 timeToCycles' :: Config -> Link.SessionState -> Link.Micros -> IO P.Time
 timeToCycles' config ss time = do
   beat <- Link.beatAtTime ss time (cQuantum config)
@@ -103,8 +99,8 @@ addMicrosToOsc :: Link.Micros -> O.Time -> O.Time
 addMicrosToOsc m t = ((fromIntegral m) / 1000000) + t
 
 -- clocked assumes tempoMV is empty
-clocked :: Config -> MVar P.ValueMap -> MVar PlayMap -> MVar [TempoAction] -> ActionHandler -> IO [ThreadId]
-clocked config stateMV mapMV actionsMV ac
+clocked :: Config -> MVar P.ValueMap -> MVar PlayMap -> MVar [TempoAction] -> ActionHandler -> Link.AbletonLink -> IO [ThreadId]
+clocked config stateMV mapMV actionsMV ac abletonLink
   = do -- TODO - do something with thread id
       clockTid <- forkIO $ loopInit
       return $! [clockTid]
@@ -117,8 +113,6 @@ clocked config stateMV mapMV actionsMV ac
         loopInit :: IO a
         loopInit =
           do
-            let bpm = (coerce defaultCps) * 60 * cyclesPerBeat
-            abletonLink <- Link.create bpm
             when (cEnableLink config) $ Link.enable abletonLink
             sessionState <- Link.createAndCaptureAppSessionState abletonLink
             now <- Link.clock abletonLink
@@ -130,8 +124,7 @@ clocked config stateMV mapMV actionsMV ac
                        start = now,
                        nowEnd = logicalTime now 1,
                        nowArc = P.Arc 0 0,
-                       nudged = 0,
-                       al = abletonLink
+                       nudged = 0
                       }
             checkArc $! st
         -- Time is processed at a fixed rate according to configuration
@@ -144,7 +137,7 @@ clocked config stateMV mapMV actionsMV ac
         -- tick delays the thread when logical time is ahead of Link time.
         tick :: State -> IO a
         tick st = do
-          now <- Link.clock (al st)
+          now <- Link.clock abletonLink
           let preferredNewTick = ticks st + 1
               logicalNow = logicalTime (start st) preferredNewTick
               aheadOfNow = now - processAhead
@@ -172,7 +165,7 @@ clocked config stateMV mapMV actionsMV ac
           st' <- processActions st actions
           let logicalEnd = logicalTime (start st') $ ticks st' + 1
               nextArcStartCycle = P.stop $ nowArc st'
-          ss <- Link.createAndCaptureAppSessionState (al st')
+          ss <- Link.createAndCaptureAppSessionState abletonLink
           arcStartTime <- cyclesToTime config ss nextArcStartCycle
           Link.destroySessionState ss
           if (arcStartTime < logicalEnd)
@@ -184,13 +177,13 @@ clocked config stateMV mapMV actionsMV ac
             streamState <- takeMVar stateMV
             let logicalEnd   = logicalTime (start st) $ ticks st + 1
                 startCycle = P.stop $ nowArc st
-            sessionState <- Link.createAndCaptureAppSessionState (al st)
+            sessionState <- Link.createAndCaptureAppSessionState abletonLink
             endCycle <- timeToCycles' config sessionState logicalEnd
             let st' = st {nowArc = P.Arc startCycle endCycle,
                           nowEnd = logicalEnd
                         }
             nowOsc <- O.time
-            nowLink <- Link.clock (al st)
+            nowLink <- Link.clock abletonLink
             let ops = LinkOperations {
               timeAtBeat = \beat -> Link.timeAtBeat sessionState beat quantum ,
               timeToCycles = timeToCycles' config sessionState,
@@ -205,7 +198,7 @@ clocked config stateMV mapMV actionsMV ac
                 tickNudge = nudged st'
             }
             streamState' <- (onTick ac) state ops streamState
-            Link.commitAndDestroyAppSessionState (al st) sessionState
+            Link.commitAndDestroyAppSessionState abletonLink sessionState
             putMVar stateMV streamState'
             tick st'
         btc :: CDouble -> CDouble
@@ -224,16 +217,16 @@ clocked config stateMV mapMV actionsMV ac
         handleActions st (ResetCycles : otherActions) streamState =
           do
             (st', streamState') <- handleActions st otherActions streamState
-            sessionState <- Link.createAndCaptureAppSessionState (al st)
+            sessionState <- Link.createAndCaptureAppSessionState abletonLink
 
             let logicalEnd   = logicalTime (start st') $ ticks st' + 1
                 st'' = st' {
                           nowArc = P.Arc 0 0,
                           nowEnd = logicalEnd + frameTimespan
                         }
-            now <- Link.clock (al st)
+            now <- Link.clock abletonLink
             Link.requestBeatAtTime sessionState 0 now quantum
-            Link.commitAndDestroyAppSessionState (al st) sessionState
+            Link.commitAndDestroyAppSessionState abletonLink sessionState
             return (st'', streamState')
         handleActions st (SingleTick pat : otherActions) streamState =
           do
@@ -243,10 +236,10 @@ clocked config stateMV mapMV actionsMV ac
             -- But using forceBeatAtTime means we can not commit its session state.
             -- Another session state, which we will commit,
             -- is introduced to keep track of tempo changes.
-            sessionState <- Link.createAndCaptureAppSessionState (al st)
-            zeroedSessionState <- Link.createAndCaptureAppSessionState (al st)
+            sessionState <- Link.createAndCaptureAppSessionState abletonLink
+            zeroedSessionState <- Link.createAndCaptureAppSessionState abletonLink
             nowOsc <- O.time
-            nowLink <- Link.clock (al st)
+            nowLink <- Link.clock abletonLink
             Link.forceBeatAtTime zeroedSessionState 0 (nowLink + processAhead) quantum
             let ops = LinkOperations {
               timeAtBeat = \beat -> Link.timeAtBeat zeroedSessionState beat quantum,
@@ -260,7 +253,7 @@ clocked config stateMV mapMV actionsMV ac
               cyclesToBeat = ctb
             }
             streamState'' <- (onSingleTick ac) nowLink ops streamState' pat
-            Link.commitAndDestroyAppSessionState (al st) sessionState
+            Link.commitAndDestroyAppSessionState abletonLink sessionState
             Link.destroySessionState zeroedSessionState
             return (st', streamState'')
         handleActions st (SetNudge nudge : otherActions) streamState =
@@ -273,8 +266,8 @@ clocked config stateMV mapMV actionsMV ac
             (st', streamState') <- handleActions st otherActions streamState
             E.catch (
               do
-                now <- Link.clock (al st')
-                sessionState <- Link.createAndCaptureAppSessionState (al st')
+                now <- Link.clock abletonLink
+                sessionState <- Link.createAndCaptureAppSessionState abletonLink
                 cyc <- timeToCycles' config sessionState now
                 Link.destroySessionState sessionState
                 -- put pattern id and change time in control input
@@ -297,8 +290,8 @@ clocked config stateMV mapMV actionsMV ac
                                             solo = False,
                                             history = (appendPat historyFlag) (silence:[])
                                           }
-              transition' pat' = do now <- Link.clock (al st')
-                                    ss <- Link.createAndCaptureAppSessionState (al st')
+              transition' pat' = do now <- Link.clock abletonLink
+                                    ss <- Link.createAndCaptureAppSessionState abletonLink
                                     c <- timeToCycles' config ss now
                                     return $! f c pat'
             pMap <- readMVar mapMV

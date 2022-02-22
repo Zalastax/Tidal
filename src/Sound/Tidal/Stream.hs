@@ -59,6 +59,7 @@ data Stream = Stream {sConfig :: Config,
                       sBusses :: MVar [Int],
                       sStateMV :: MVar ValueMap,
                       -- sOutput :: MVar ControlPattern,
+                      sLink :: Link.AbletonLink,
                       sListen :: Maybe O.UDP,
                       sPMapMV :: MVar PlayMap,
                       sActionsMV :: MVar [T.TempoAction],
@@ -193,6 +194,9 @@ dirtShape = OSC "/play" $ ArgList [("cps", fDefault 0),
                                    -- ("id", iDefault 0)
                                   ]
 
+defaultCps :: O.Time
+defaultCps = 0.5625
+
 -- Start an instance of Tidal
 -- Spawns a thread within Tempo that acts as the clock
 -- Spawns a thread that listens to and acts on OSC control messages
@@ -219,9 +223,12 @@ startStream config oscmap
                                                           ) (oAddress target) (oPort target)
                                         return $ Cx {cxUDP = u, cxAddr = remote_addr, cxBusAddr = remote_bus_addr, cxTarget = target, cxOSCs = os}                                        
                    ) oscmap
+       let bpm = (coerce defaultCps) * 60 * (cCyclesPerBeat config)
+       abletonLink <- Link.create bpm
        let stream = Stream {sConfig = config,
                             sBusses = bussesMV,
                             sStateMV  = sMapMV,
+                            sLink = abletonLink,
                             sListen = listen,
                             sPMapMV = pMapMV,
                             sActionsMV = actionsMV,
@@ -235,7 +242,7 @@ startStream config oscmap
          T.updatePattern = updatePattern stream
          }
        -- Spawn a thread that acts as the clock
-       _ <- T.clocked config sMapMV pMapMV actionsMV ac
+       _ <- T.clocked config sMapMV pMapMV actionsMV ac abletonLink
        -- Spawn a thread to handle OSC control messages
        _ <- forkIO $ ctrlResponder 0 config stream
        return stream
@@ -731,3 +738,19 @@ verbose c s = when (cVerbose c) $ putStrLn s
 
 recvMessagesTimeout :: (O.Transport t) => Double -> t -> IO [O.Message]
 recvMessagesTimeout n sock = fmap (maybe [] O.packetMessages) $ O.recvPacketTimeout n sock
+
+streamGetcps :: Stream -> IO Double
+streamGetcps s = do
+  let config = sConfig s
+  now <- Link.clock (sLink s)
+  ss <- Link.createAndCaptureAppSessionState (sLink s)
+  bpm <- Link.getTempo ss
+  return $! coerce $ bpm / (cCyclesPerBeat config) / 60
+
+streamGetnow :: Stream -> IO Double
+streamGetnow s = do
+  let config = sConfig s
+  ss <- Link.createAndCaptureAppSessionState (sLink s)
+  now <- Link.clock (sLink s)
+  beat <- Link.beatAtTime ss now (cQuantum config)
+  return $! coerce $ beat / (cCyclesPerBeat config)
