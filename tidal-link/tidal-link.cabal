@@ -39,7 +39,7 @@ library
     extra-libraries:
         stdc++
     cxx-options:
-      -DLINK_PLATFORM_MACOSX=1 -Wno-multichar -Wno-subobject-linkage -g
+      -DLINK_PLATFORM_MACOSX=1 -Wno-multichar -Wno-subobject-linkage -g -std=c++14
     cxx-sources: link/extensions/abl_link/src/abl_link.cpp
   else
     extra-libraries:

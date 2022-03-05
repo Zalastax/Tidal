@@ -140,7 +140,7 @@ clocked config stateMV mapMV actionsMV ac abletonLink
           now <- Link.clock abletonLink
           let preferredNewTick = ticks st + 1
               logicalNow = logicalTime (start st) preferredNewTick
-              aheadOfNow = now - processAhead
+              aheadOfNow = now + processAhead
               actualTick = (aheadOfNow - start st) `div` frameTimespan
               drifted    = abs (actualTick - preferredNewTick) > cSkipTicks config
               newTick | drifted   = actualTick

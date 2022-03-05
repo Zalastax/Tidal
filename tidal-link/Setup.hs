@@ -74,6 +74,7 @@ buildTidalLink ::
   LocalBuildInfo ->
   IO String
 buildTidalLink pdesc lbinfo = do
+  createDirectoryIfMissing True (binInstDir pdesc lbinfo)
   getDbProgramOutput
     Verbosity.normal
     gccProgram
