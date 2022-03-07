@@ -36,7 +36,7 @@ library
         winmm
         ws2_32
     cxx-options:
-      -DLINK_PLATFORM_WINDOWS=1 -Wno-multichar -Wno-subobject-linkage -g -liphlpapi -lwinmm -lws2_32
+      -DLINK_PLATFORM_WINDOWS=1 -Wno-multichar -Wno-subobject-linkage -g -std=c++14 -liphlpapi -lwinmm -lws2_32
     cxx-sources: link/extensions/abl_link/src/abl_link.cpp
   elif os(darwin)
     extra-libraries:

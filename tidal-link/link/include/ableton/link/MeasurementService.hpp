@@ -30,6 +30,11 @@
 #include <map>
 #include <memory>
 
+#include <stdlib.h>
+#include <string>
+#include <iostream>
+#include <ableton/link/Show.hpp>
+
 namespace ableton
 {
 namespace link
@@ -47,14 +52,20 @@ public:
     GhostXForm ghostXForm,
     Clock clock,
     IoType io)
-    : mClock(std::move(clock))
+    : show_a("Before mMeasurementMap")
+    , show_b("Before mClock")
+    , mClock(std::move(clock))
+    , show_c("Before mIo")
     , mIo(std::move(io))
+    , show_d("Before mPingResponder")
     , mPingResponder(std::move(address),
         std::move(sessionId),
         std::move(ghostXForm),
         mClock,
         util::injectRef(*mIo))
+    , show_e("After mPingResponder")
   {
+    std::cout << "MeasurementService"<< std::endl;
   }
 
   MeasurementService(const MeasurementService&) = delete;
@@ -134,10 +145,15 @@ private:
   // the members are guaranteed to be valid when any final handlers
   // are begin run.
   using MeasurementMap = std::map<NodeId, std::unique_ptr<MeasurementInstance>>;
+  Show show_a;
   MeasurementMap mMeasurementMap;
+  Show show_b;
   Clock mClock;
+  Show show_c;
   IoType mIo;
+  Show show_d;
   PingResponder<Clock, IoContext> mPingResponder;
+  Show show_e;
 };
 
 } // namespace link

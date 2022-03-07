@@ -32,6 +32,10 @@
 #include <condition_variable>
 #include <mutex>
 
+#include <stdlib.h>
+#include <string>
+#include <iostream>
+
 namespace ableton
 {
 namespace link
@@ -728,11 +732,17 @@ private:
       util::Injected<IoType&> io,
       const asio::ip::address& addr)
     {
+      std::cout << "Controller 1"<< std::endl;
       if (addr.is_v4())
       {
-        return GatewayPtr{new ControllerGateway{std::move(io), addr.to_v4(),
+        std::cout << "Controller 2"<< std::endl;
+        auto addv4 = addr.to_v4();
+        std::cout << "Controller 3"<< std::endl;
+        auto myptr = GatewayPtr{new ControllerGateway{std::move(io), addv4,
           util::injectVal(makeGatewayObserver(mController.mPeers, addr)),
           std::move(state.first), std::move(state.second), mController.mClock}};
+        std::cout << "Controller 4" << std::endl;
+        return myptr;
       }
       else
       {

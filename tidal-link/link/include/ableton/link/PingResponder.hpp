@@ -28,6 +28,11 @@
 #include <chrono>
 #include <memory>
 
+#include <stdlib.h>
+#include <string>
+#include <iostream>
+#include <ableton/link/Show.hpp>
+
 namespace ableton
 {
 namespace link
@@ -45,14 +50,19 @@ public:
     GhostXForm ghostXForm,
     Clock clock,
     IoType io)
-    : mIo(io)
+    : show_g("Before mIo")
+    , mIo(io)
+    ,show_h("Before mpImpl")
     , mpImpl(std::make_shared<Impl>(std::move(address),
         std::move(sessionId),
         std::move(ghostXForm),
         std::move(clock),
         std::move(io)))
+    , show_i("After mpImpl")
   {
+    std::cout << "PingResponder:";
     mpImpl->listen();
+    std::cout << " listened"<< std::endl;
   }
 
   PingResponder(const PingResponder&) = delete;
@@ -87,12 +97,19 @@ private:
       GhostXForm ghostXForm,
       Clock clock,
       IoType io)
-      : mSessionId(std::move(sessionId))
+      : show_a("Before mSessionId")
+      , mSessionId(std::move(sessionId))
+      , show_b("Before mGhostXForm")
       , mGhostXForm(std::move(ghostXForm))
+      , show_c("Before mClock")
       , mClock(std::move(clock))
+      , show_d("Before mLog")
       , mLog(channel(io->log(), "gateway@" + address.to_string()))
+      , show_e("Before mSocket")
       , mSocket(io->template openUnicastSocket<v1::kMaxMessageSize>(address))
+      , show_f("After mSocket")
     {
+      std::cout << "PingResponder Impl" << std::endl;
     }
 
     void listen()
@@ -156,15 +173,24 @@ private:
       mSocket.send(pongBuffer.data(), numBytes, to);
     }
 
+    Show show_a;
     SessionId mSessionId;
+    Show show_b;
     GhostXForm mGhostXForm;
+    Show show_c;
     Clock mClock;
+    Show show_d;
     typename IoType::type::Log mLog;
+    Show show_e;
     Socket mSocket;
+    Show show_f;
   };
 
+  Show show_g;
   IoType mIo;
+  Show show_h;
   std::shared_ptr<Impl> mpImpl;
+  Show show_i;
 };
 
 } // namespace link

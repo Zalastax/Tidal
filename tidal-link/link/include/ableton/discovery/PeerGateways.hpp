@@ -22,6 +22,12 @@
 #include <ableton/discovery/InterfaceScanner.hpp>
 #include <ableton/platforms/asio/AsioWrapper.hpp>
 #include <map>
+#include <stdlib.h>
+#include <string>
+#include <iostream>
+#include <exception>
+#include <typeinfo>
+#include <stdexcept>
 
 namespace ableton
 {
@@ -116,38 +122,55 @@ private:
       transform(std::begin(mGateways), std::end(mGateways), back_inserter(curAddrs),
         [](const typename GatewayMap::value_type& vt) { return vt.first; });
 
+      std::cout << "Pierre 1";
+
       // Now use set_difference to determine the set of addresses that
       // are new and the set of cur addresses that are no longer there
       vector<asio::ip::address> newAddrs;
       set_difference(std::begin(range), std::end(range), std::begin(curAddrs),
         std::end(curAddrs), back_inserter(newAddrs));
-
+      std::cout << "Pierre 2";
       vector<asio::ip::address> staleAddrs;
       set_difference(std::begin(curAddrs), std::end(curAddrs), std::begin(range),
         std::end(range), back_inserter(staleAddrs));
 
+      std::cout << "Pierre 3";
       // Remove the stale addresses
       for (const auto& addr : staleAddrs)
       {
         mGateways.erase(addr);
       }
 
+      std::cout << "Pierre 4";
       // Add the new addresses
       for (const auto& addr : newAddrs)
       {
+        std::cout << "Pierre 5";
         try
         {
           // Only handle v4 for now
           if (addr.is_v4())
           {
+            std::cout << "Pierre 6";
             info(mIo.log()) << "initializing peer gateway on interface " << addr;
-            mGateways.emplace(addr, mFactory(mState, util::injectRef(mIo), addr.to_v4()));
+            auto addv4 = addr.to_v4();
+            std::cout << "Pierre 8";
+            auto hhhhh = mFactory(mState, util::injectRef(mIo), addv4);
+            std::cout << "Pierre 9";
+            mGateways.emplace(addr, hhhhh);
+            std::cout << "Pierre 13" << std::endl;
           }
         }
         catch (const runtime_error& e)
         {
+          std::cout << "Pierre 12";
           warning(mIo.log()) << "failed to init gateway on interface " << addr
                              << " reason: " << e.what();
+        }
+        catch(...)
+        {
+          std::exception_ptr p = std::current_exception();
+          std::cout <<(p ? p.__cxa_exception_type()->name() : "null") << std::endl;
         }
       }
     }

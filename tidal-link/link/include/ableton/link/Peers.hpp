@@ -22,6 +22,9 @@
 #include <ableton/link/PeerState.hpp>
 #include <ableton/util/Injected.hpp>
 #include <cassert>
+#include <stdlib.h>
+#include <string>
+#include <iostream>
 
 namespace ableton
 {
@@ -123,6 +126,7 @@ public:
       : mpImpl(std::move(pImpl))
       , mAddr(std::move(addr))
     {
+      std::cout << "GatewayObserver";
     }
     GatewayObserver(const GatewayObserver&) = delete;
 
@@ -171,7 +175,10 @@ public:
   // Factory function for the gateway observer
   friend GatewayObserver makeGatewayObserver(Peers& peers, asio::ip::address addr)
   {
-    return GatewayObserver{peers.mpImpl, std::move(addr)};
+    std::cout << "makeGatewayObserver1 " << addr << ".";
+    auto gwo = GatewayObserver{peers.mpImpl, std::move(addr)};
+    std::cout << "makeGatewayObserver2";
+    return gwo;
   }
 
 private:

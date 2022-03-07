@@ -24,6 +24,10 @@
 #include <ableton/util/SafeAsyncHandler.hpp>
 #include <memory>
 
+#include <stdlib.h>
+#include <string>
+#include <iostream>
+
 namespace ableton
 {
 namespace discovery
@@ -237,6 +241,8 @@ IpV4Gateway<PeerObserver, NodeState, IoContext> makeIpV4Gateway(
   using namespace std;
   using namespace util;
 
+  std::cout << "makeIpV4Gateway";
+
   const uint8_t ttl = 5;
   const uint8_t ttlRatio = 20;
 
@@ -244,6 +250,7 @@ IpV4Gateway<PeerObserver, NodeState, IoContext> makeIpV4Gateway(
 
   auto messenger = makeUdpMessenger(
     injectVal(std::move(iface)), std::move(state), injectRef(*io), ttl, ttlRatio);
+  std::cout << "(return makeIpV4Gateway)";
   return {injectVal(std::move(messenger)), std::move(observer), std::move(io)};
 }
 

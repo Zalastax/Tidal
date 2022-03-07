@@ -27,6 +27,16 @@
 #include <thread>
 #include <utility>
 
+#include <stdlib.h>
+#include <string>
+#include <iostream>
+#include <ableton/link/Show.hpp>
+
+#include "asio/error_code.hpp"
+#include "asio/system_error.hpp"
+#include <windows.h>
+#include <intrin.h>
+
 namespace ableton
 {
 namespace platforms
@@ -123,11 +133,18 @@ public:
   template <std::size_t BufferSize>
   Socket<BufferSize> openUnicastSocket(const ::asio::ip::address_v4& addr)
   {
+    std::cout << "openUnicastSocket A" << std::endl;
+    __debugbreak();
+    std::cout << "Passed break" << std::endl;
     auto socket = Socket<BufferSize>{*mpService};
+    std::cout << "openUnicastSocket B" << std::endl;
     socket.mpImpl->mSocket.set_option(
       ::asio::ip::multicast::enable_loopback(addr.is_loopback()));
+      std::cout << "openUnicastSocket C" << std::endl;
     socket.mpImpl->mSocket.set_option(::asio::ip::multicast::outbound_interface(addr));
+    std::cout << "openUnicastSocket D" << std::endl;
     socket.mpImpl->mSocket.bind(::asio::ip::udp::endpoint{addr, 0});
+    std::cout << "openUnicastSocket E" << std::endl;
     return socket;
   }
 

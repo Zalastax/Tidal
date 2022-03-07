@@ -22,6 +22,11 @@
 #include <ableton/discovery/PeerGateway.hpp>
 #include <ableton/link/MeasurementService.hpp>
 #include <ableton/link/PeerState.hpp>
+#include <ableton/link/Show.hpp>
+
+#include <stdlib.h>
+#include <string>
+#include <iostream>
 
 namespace ableton
 {
@@ -38,17 +43,22 @@ public:
     NodeState nodeState,
     GhostXForm ghostXForm,
     Clock clock)
-    : mIo(std::move(io))
+    : show_a("Before mIo")
+    , mIo(std::move(io))
+    , show_b("Before mMeasurement")
     , mMeasurement(addr,
         nodeState.sessionId,
         std::move(ghostXForm),
         std::move(clock),
         util::injectRef(*mIo))
+    , show_c("Before mPeerGateway")
     , mPeerGateway(discovery::makeIpV4Gateway(util::injectRef(*mIo),
         std::move(addr),
         std::move(observer),
         PeerState{std::move(nodeState), mMeasurement.endpoint()}))
+    , show_d("After mPeerGateway")
   {
+    std::cout << "Gateway"<< std::endl;
   }
 
   Gateway(const Gateway& rhs) = delete;
@@ -82,11 +92,15 @@ public:
   }
 
 private:
+  Show show_a;
   util::Injected<IoContext> mIo;
+  Show show_b;
   MeasurementService<Clock, typename util::Injected<IoContext>::type&> mMeasurement;
+  Show show_c;
   discovery::
     IpV4Gateway<PeerObserver, PeerState, typename util::Injected<IoContext>::type&>
       mPeerGateway;
+  Show show_d;
 };
 
 } // namespace link

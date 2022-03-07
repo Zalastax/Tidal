@@ -23,6 +23,9 @@
 #include <ableton/util/Injected.hpp>
 #include <chrono>
 #include <vector>
+// #include <iostream>
+
+// using namespace std;
 
 namespace ableton
 {
@@ -70,6 +73,7 @@ public:
     addrs.erase(unique(begin(addrs), end(addrs)), end(addrs));
     // Pass them to the callback
     (*mCallback)(std::move(addrs));
+    exit(113);
     // setup the next scanning
     mTimer.expires_from_now(mPeriod);
     using ErrorCode = typename Timer::ErrorCode;
